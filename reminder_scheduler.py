@@ -28,10 +28,13 @@ async def send_reminder(event_id: int) -> None:
 
     from keyboards import done_keyboard
 
+    from datetime import date as date_type
+    due = date_type.fromisoformat(event["due_date"])
+
     await _bot.send_message(
         event["user_id"],
         f"Напоминание: {event['title']}\n"
-        f"Срок: {event['due_date']}",
+        f"Срок: {due.strftime('%d.%m.%Y')}",
         reply_markup=done_keyboard(event_id),
     )
 

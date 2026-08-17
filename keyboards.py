@@ -1,5 +1,6 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from datetime import date
 
 
 def main_menu() -> InlineKeyboardMarkup:
@@ -29,8 +30,9 @@ def repeat_keyboard() -> InlineKeyboardMarkup:
 def events_keyboard(events) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for event in events:
+        due = date.fromisoformat(event["due_date"])
         builder.button(
-            text=f"{event['title']} — {event['due_date']}",
+            text=f"{event['title']} — {due.strftime('%d.%m.%Y')}",
             callback_data=f"open:{event['id']}",
         )
     builder.button(text="Новое событие", callback_data="new_event")
@@ -38,10 +40,14 @@ def events_keyboard(events) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def event_actions(event_id: int) -> InlineKeyboardMarkup:
+def event_actions(event_id: int, is_paused: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="Сделано", callback_data=f"done:{event_id}")
+    if is_paused:
+        builder.button(text="Возобновить", callback_data=f"resume:{event_id}")
+    else:
+        builder.button(text="Пауза", callback_data=f"pause:{event_id}")
     builder.button(text="Удалить", callback_data=f"delete:{event_id}")
     builder.button(text="К списку", callback_data="list_events")
-    builder.adjust(2, 1)
+    builder.adjust(2, 2)
     return builder.as_markup()

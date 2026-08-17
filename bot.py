@@ -111,6 +111,7 @@ async def show_events(user_id: int, sender):
 async def open_event(callback: CallbackQuery):
     event_id = int(callback.data.split(":")[1])
     event = db.get_event(event_id)
+    due = date.fromisoformat(event["due_date"])
 
     if event is None:
         await callback.answer("Событие не найдено")
@@ -118,13 +119,42 @@ async def open_event(callback: CallbackQuery):
 
     await callback.message.edit_text(
         f"{event['title']}\n\n"
-        f"Срок: {event['due_date']}\n"
+        f"Срок: {due.strftime('%d.%m.%Y')}\n"
         f"Повтор: {REPEAT_NAMES.get(event['repeat_type'], '—')}\n"
-        f"Напоминаю за {event['days_before']} дн. в {event['notify_time']}",
-        reply_markup=event_actions(event_id),
+        f"Напоминаю за {event['days_before']} дн. в {event['notify_time']}"
+        + ("\n\nНа паузе" if event["is_paused"] else ""),
+        reply_markup=event_actions(event_id, bool(event["is_paused"])),
     )
     await callback.answer()
 
+@dp.callback_query(F.data.startswith("pause:"))
+async def pause_event(callback: CallbackQuery):
+    event_id = int(callback.data.split(":")[1])
+    db.set_paused(event_id, True)
+    sched.unschedule_event(event_id)
+    await callback.answer("Напоминания остановлены")
+    await open_event(callback)
+
+
+@dp.callback_query(F.data.startswith("resume:"))
+async def resume_event(callback: CallbackQuery):
+    event_id = int(callback.data.split(":")[1])
+    event = db.get_event(event_id)
+
+    db.set_paused(event_id, False)
+
+    # если срок уже прошёл — переносим на следующий цикл
+    if event and date.fromisoformat(event["due_date"]) < date.today():
+        following = next_due_date(
+            date.fromisoformat(event["due_date"]), event["repeat_type"]
+        )
+        if following:
+            db.mark_done(event_id, following.isoformat())
+            await callback.answer("Срок прошёл, перенёс на следующий")
+
+    sched.schedule_event(event_id)
+    await open_event(callback)
+    await open_event(callback)
 
 @dp.callback_query(F.data.startswith("done:"))
 async def done_event(callback: CallbackQuery):
@@ -142,7 +172,7 @@ async def done_event(callback: CallbackQuery):
     sched.reschedule_event(event_id)
 
     if following:
-        text = f"Отмечено. Следующий срок: {following.isoformat()}"
+        text = f"Отмечено. Следующий срок: {following.strftime('%d.%m.%Y')}"
     else:
         text = "Отмечено. Событие разовое, больше не напомню."
 
@@ -157,6 +187,7 @@ async def delete_event_handler(callback: CallbackQuery):
     db.delete_event(event_id)
     await callback.message.edit_text("Событие удалено.", reply_markup=main_menu())
     await callback.answer()
+
 
 @dp.callback_query(F.data == "new_event")
 async def new_event_start(callback: CallbackQuery, state: FSMContext):
@@ -250,6 +281,7 @@ async def new_event_time(message: Message, state: FSMContext):
     notify_time = parsed.strftime("%H:%M")
     data = await state.get_data()
     await state.clear()
+    due = date.fromisoformat(data["due_date"])
 
     event_id = db.add_event(
         user_id=message.from_user.id,
@@ -265,9 +297,17 @@ async def new_event_time(message: Message, state: FSMContext):
     tz = db.get_timezone(message.from_user.id)
     await message.answer(
         f"Готово: {data['title']}\n\n"
-        f"Срок: {data['due_date']}\n"
+        f"Срок: {due.strftime('%d.%m.%Y')}\n"
         f"Повтор: {REPEAT_NAMES.get(data['repeat_type'], '—')}\n"
         f"Напомню за {data['days_before']} дн. в {notify_time} ({tz})",
+        reply_markup=main_menu(),
+    )
+
+
+@dp.message()
+async def fallback_handler(message: Message):
+    await message.answer(
+        "Не понял. Список команд — /help",
         reply_markup=main_menu(),
     )
 

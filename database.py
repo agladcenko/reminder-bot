@@ -152,3 +152,12 @@ def get_all_active_events() -> list[sqlite3.Row]:
     ).fetchall()
     conn.close()
     return rows
+
+def set_paused(event_id: int, paused: bool) -> None:
+    conn = get_connection()
+    conn.execute(
+        "UPDATE events SET is_paused = ? WHERE id = ?",
+        (1 if paused else 0, event_id),
+    )
+    conn.commit()
+    conn.close()
